@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Calendar, Check, X, Moon, Sun, ChevronLeft, ChevronRight, Plus, Lock, Unlock, PieChart, Activity, TrendingUp, Award, Zap, LogOut, User, Loader2, AlertTriangle, Menu, ArrowLeft, Flame, Image as ImageIcon, Upload, HelpCircle, ChevronRight as ChevronRightIcon, Edit2, Ban, Trash2, GripVertical } from "lucide-react";
+import {
+  Calendar, Check, X, Moon, Sun, ChevronLeft, ChevronRight, Plus, Lock, Unlock,
+  PieChart, Activity, TrendingUp, Award, Zap, LogOut, User, Loader2, AlertTriangle,
+  Menu, ArrowLeft, Flame, Image as ImageIcon, Upload, HelpCircle,
+  ChevronRight as ChevronRightIcon, Edit2, Ban, Trash2, GripVertical, BookOpen, Skull,
+  Search, Filter, Circle, CheckCircle, XCircle
+} from "lucide-react";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
@@ -29,14 +35,13 @@ const WEEK_DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const TARGET_MONTHLY_XP = 2500;
 
 const TUTORIAL_STEPS = [
-  { title: "Welcome to Your System", desc: "This isn't just a checklist. It's a system to visualize your discipline. Let's walk through how it works." },
-  { title: "Daily Habits & Rules", desc: "Add habits on the Journal page. Checking a box gives you XP. You can edit habits and set 'Rest Days'. Past months are PERMANENTLY LOCKED (except on the 1st of the new month until 9 AM)." },
-  { title: "Dynamic XP System", desc: "XP is calculated automatically. Each month has a pool of 2,500 XP distributed among your valid checkmarks. Adding more habits adjusts the value of each checkmark to keep your progression steady." },
-  { title: "Strict Locks", desc: "You can freely edit the current month, but history is sacred. Late entries (past days) count for streaks but give 0 XP. Only actions taken today build your level." },
-  { title: "Mid-Month Starts", desc: "Starting a habit halfway through the month? No problem. Days before you created the habit are marked as 'Void' (striped) and don't count against your consistency score." },
-  { title: "Analytics & Rhythm", desc: "Your streak only increases if you complete 100% of your active habits for the day. Use the Analytics dashboard to track your consistency score." },
-  { title: "The Vision Board", desc: "On your Profile, upload a photo of your goal. It starts blurry. As you gain XP (Level up), it becomes clearer. Reach Level 100 to see it fully." },
-  { title: "The Code of Honor", desc: "This system relies on your honesty. You are given the freedom to edit today, but you are doing this for yourself. Don't cheat the streak. Good luck. Note: This is a one-time tool to achieve your goal and not meant to last forever. Access is limited to 2 years from your start date." },
+  { title: "Welcome to Your System", desc: "This isn't just a checklist. It's a system to visualize your discipline." },
+  { title: "Vices & Logbook", desc: "Mark habits as 'Vices' (Anti-Habits) to track things you want to avoid. Access your Log from the Profile page." },
+  { title: "Daily Habits & Rules", desc: "Checking a box gives you XP. For Vices, NOT checking the box gives you XP (Success = Green Check). Checking a Vice means failure (Red Cross). Past months are PERMANENTLY LOCKED (except on the 1st of the new month until 9 AM)." },
+  { title: "Strict Locks", desc: "You can freely edit the current month, but history is sacred. Late entries count for streaks but give 0 XP." },
+  { title: "Mid-Month Starts", desc: "Starting a habit halfway through? Days before creation are marked as 'Void' and don't hurt your score." },
+  { title: "The Vision Board", desc: "Upload a goal photo. It starts blurry and clarifies as you level up." },
+  { title: "The Code of Honor", desc: "This is a one-time tool to achieve your goal. Access is limited to 2 years from your start date." },
 ];
 
 export default function App() {
@@ -45,6 +50,7 @@ export default function App() {
   const [joinedDate, setJoinedDate] = useState(null);
   const [monthlyHabits, setMonthlyHabits] = useState({});
   const [checks, setChecks] = useState({});
+  const [logbook, setLogbook] = useState({});
   const [visionBoardImg, setVisionBoardImg] = useState(null);
   const [userXP, setUserXP] = useState(0);
   const [showIntro, setShowIntro] = useState(true);
@@ -57,11 +63,20 @@ export default function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const [hasSeenTutorial, setHasSeenTutorial] = useState(() => JSON.parse(localStorage.getItem("ht_tutorial_seen") || "false"));
+  
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [selectedLogDate, setSelectedLogDate] = useState(null);
+  const [logEntryText, setLogEntryText] = useState("");
+  
+  const [logSearch, setLogSearch] = useState("");
+  const [logFilter, setLogFilter] = useState("all"); 
+
   const [editingHabitId, setEditingHabitId] = useState(null);
   const [manualHabitName, setManualHabitName] = useState("");
   const [manualHabitIcon, setManualHabitIcon] = useState("✨");
   const [manualRestDays, setManualRestDays] = useState([]);
+  const [manualIsVice, setManualIsVice] = useState(false);
   const [darkMode, setDarkMode] = useState(() => JSON.parse(localStorage.getItem("ht_dark") || "true"));
   const [strictMode, setStrictMode] = useState(() => JSON.parse(localStorage.getItem("ht_strict") || "true"));
   const [activeTab, setActiveTab] = useState("tracker");
@@ -73,13 +88,17 @@ export default function App() {
     bg: "bg-[#09090b]", text: "text-zinc-100", textMuted: "text-zinc-500", card: "bg-[#121214]", cardLight: "bg-[#18181b]",
     border: "border-zinc-800", tabBorder: "border-zinc-800", accent: "text-emerald-400", accentBg: "bg-emerald-500",
     hover: "hover:bg-zinc-800", gridHeader: "bg-[#09090b]", gridBorder: "border-zinc-800", checkBg: "bg-emerald-900/30",
-    checkFill: "bg-emerald-500", scrollThumb: "#3f3f46", scrollTrack: "#18181b", heatmapEmpty: "bg-zinc-800/50 border border-zinc-800",
+    checkBgZero: "bg-zinc-800/80 border border-zinc-700",
+    checkFill: "text-emerald-400", checkFillZero: "text-zinc-400", viceFail: "bg-red-900/40 border border-red-900", viceSuccess: "text-emerald-500",
+    scrollThumb: "#3f3f46", scrollTrack: "#18181b", heatmapEmpty: "bg-zinc-800/50 border border-zinc-800",
     emptyBar: "bg-zinc-800", voidPattern: `repeating-linear-gradient(45deg, #18181b, #18181b 10px, #27272a 10px, #27272a 20px)`,
   } : {
     bg: "bg-[#fafafa]", text: "text-zinc-900", textMuted: "text-zinc-400", card: "bg-white", cardLight: "bg-zinc-50",
     border: "border-zinc-200", tabBorder: "border-zinc-200", accent: "text-emerald-700", accentBg: "bg-emerald-600",
     hover: "hover:bg-zinc-50", gridHeader: "bg-[#fafafa]", gridBorder: "border-zinc-200", checkBg: "bg-emerald-50",
-    checkFill: "bg-emerald-600", scrollThumb: "#d4d4d8", scrollTrack: "transparent", heatmapEmpty: "bg-zinc-200",
+    checkBgZero: "bg-zinc-200/80 border border-zinc-300",
+    checkFill: "text-emerald-600", checkFillZero: "text-zinc-500", viceFail: "bg-red-100 border border-red-200", viceSuccess: "text-emerald-600",
+    scrollThumb: "#d4d4d8", scrollTrack: "transparent", heatmapEmpty: "bg-zinc-200",
     emptyBar: "bg-zinc-200", voidPattern: `repeating-linear-gradient(45deg, #f4f4f5, #f4f4f5 10px, #e4e4e7 10px, #e4e4e7 20px)`,
   };
 
@@ -113,16 +132,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user) { setMonthlyHabits({}); setChecks({}); return; }
+    if (!user) { setMonthlyHabits({}); setChecks({}); setLogbook({}); return; }
     const unsubHabits = onSnapshot(doc(db, "users", user.uid, "data", "habits"), (doc) => setMonthlyHabits(doc.exists() ? doc.data() : {}));
     const unsubChecks = onSnapshot(doc(db, "users", user.uid, "data", "checks"), (doc) => setChecks(doc.exists() ? doc.data() : {}));
+    const unsubLogbook = onSnapshot(doc(db, "users", user.uid, "data", "logbook"), (doc) => setLogbook(doc.exists() ? doc.data() : {}));
     const unsubMeta = onSnapshot(doc(db, "users", user.uid, "data", "metadata"), (doc) => {
       if (doc.exists()) {
         if (doc.data().visionBoard) setVisionBoardImg(doc.data().visionBoard);
         if (doc.data().xp !== undefined) setUserXP(doc.data().xp);
       }
     });
-    return () => { unsubHabits(); unsubChecks(); unsubMeta(); };
+    return () => { unsubHabits(); unsubChecks(); unsubMeta(); unsubLogbook(); };
   }, [user]);
 
   useEffect(() => { localStorage.setItem("ht_dark", JSON.stringify(darkMode)); }, [darkMode]);
@@ -185,6 +205,7 @@ export default function App() {
   const isCurrentMonth = currentYear === now.getFullYear() && currentMonth === now.getMonth();
   const isFirstDayOfNewMonth = now.getDate() === 1;
   const isViewingLastMonth = (currentMonth === now.getMonth() - 1 && currentYear === now.getFullYear()) || (now.getMonth() === 0 && currentMonth === 11 && currentYear === now.getFullYear() - 1);
+  const isFutureMonth = currentYear > now.getFullYear() || (currentYear === now.getFullYear() && currentMonth > now.getMonth());
   const isGracePeriodActive = isFirstDayOfNewMonth && isViewingLastMonth && now.getHours() < 9;
   const showLockButton = isCurrentMonth || isGracePeriodActive;
 
@@ -210,8 +231,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (currentHabits.length === 0 && activeTab === 'analysis') setActiveTab('tracker');
-  }, [currentHabits.length, activeTab]);
+    if ((currentHabits.length === 0 || isFutureMonth) && activeTab === 'analysis') {
+      setActiveTab('tracker');
+    }
+  }, [currentHabits.length, activeTab, isFutureMonth]);
 
   const navigateMonth = (direction) => {
     const newDate = new Date(currentDate);
@@ -282,7 +305,49 @@ export default function App() {
     } catch (e) {}
   };
 
-  const toggleCheck = (habitId, day, event) => {
+  const openLogbook = (day) => {
+    const now = new Date();
+    const isFirstDayOfNewMonth = now.getDate() === 1;
+    const isViewingLastMonth = (currentMonth === now.getMonth() - 1 && currentYear === now.getFullYear()) || (now.getMonth() === 0 && currentMonth === 11 && currentYear === now.getFullYear() - 1);
+    const isLastDayOfPrevMonth = day === new Date(currentYear, currentMonth + 1, 0).getDate();
+    const allowLateEdit = isFirstDayOfNewMonth && isViewingLastMonth && isLastDayOfPrevMonth && now.getHours() < 9;
+    
+    const targetDate = new Date(currentYear, currentMonth, day);
+    const nowStartOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const isToday = targetDate.getTime() === nowStartOfDay.getTime();
+    const isFuture = targetDate > nowStartOfDay;
+    
+    const isLocked = (strictMode && !isToday && !allowLateEdit) || (isPastMonth && !allowLateEdit);
+
+    if (isFuture) return; 
+    if (isLocked) return;
+
+    const dateStr = `${currentYear}-${currentMonth}-${day}`;
+    setSelectedLogDate(dateStr);
+    setLogEntryText(logbook[dateStr] || "");
+    setShowLogModal(true);
+  };
+
+  const handleLogChange = (e) => {
+    const text = e.target.value;
+    const words = text.trim().split(/\s+/);
+    if (words.length <= 100) {
+      setLogEntryText(text);
+    }
+  };
+
+  const saveLogEntry = async () => {
+    if (!user || !selectedLogDate) return;
+    const newLogbook = { ...logbook, [selectedLogDate]: logEntryText };
+    if (!logEntryText.trim()) delete newLogbook[selectedLogDate];
+    setLogbook(newLogbook);
+    setShowLogModal(false);
+    try { await setDoc(doc(db, "users", user.uid, "data", "logbook"), newLogbook); } catch (e) {}
+  };
+
+  const toggleCheck = (habit, day, event) => {
+    const habitId = habit.id;
+    const isVice = habit.isVice;
     const targetDate = new Date(currentYear, currentMonth, day);
     const nowStartOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const isLastDayOfPrevMonth = day === new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -297,20 +362,24 @@ export default function App() {
     const newChecks = { ...checks };
     const entry = newChecks[key];
     const isChecked = typeof entry === "object" ? entry.completed : !!entry;
-    const awardsXP = isToday;
+    
+    let awardsXP = false;
+    if (!isVice && isToday) awardsXP = true; 
 
     if (isChecked) {
-      delete newChecks[key];
+      delete newChecks[key]; 
     } else {
-      newChecks[key] = { completed: true, xpAwarded: awardsXP };
+      newChecks[key] = { completed: true, xpAwarded: awardsXP }; 
       let popupAmount = 0;
       if (awardsXP) {
-        const weight = getMonthlyXpWeight(currentYear, currentMonth, currentHabits);
-        popupAmount = parseFloat(weight.toFixed(1));
+         const weight = getMonthlyXpWeight(currentYear, currentMonth, currentHabits);
+         popupAmount = parseFloat(weight.toFixed(1));
       }
-      const newPopup = { id: Date.now(), x: event.clientX, y: event.clientY, amount: popupAmount, isZero: !awardsXP };
-      setXpPopups((prev) => [...prev, newPopup]);
-      setTimeout(() => setXpPopups((prev) => prev.filter((p) => p.id !== newPopup.id)), 1000);
+      if (popupAmount > 0) {
+        const newPopup = { id: Date.now(), x: event.clientX, y: event.clientY, amount: popupAmount, isZero: false };
+        setXpPopups((prev) => [...prev, newPopup]);
+        setTimeout(() => setXpPopups((prev) => prev.filter((p) => p.id !== newPopup.id)), 1000);
+      }
     }
     saveChecksToCloud(newChecks);
   };
@@ -328,6 +397,7 @@ export default function App() {
     setManualHabitName(habit.name);
     setManualHabitIcon(habit.icon);
     setManualRestDays(habit.restDays || []);
+    setManualIsVice(habit.isVice || false);
     setShowAddModal(true);
   };
 
@@ -337,6 +407,7 @@ export default function App() {
     setManualHabitName("");
     setManualHabitIcon("✨");
     setManualRestDays([]);
+    setManualIsVice(false);
     setShowAddModal(true);
   };
 
@@ -357,11 +428,11 @@ export default function App() {
     if (!manualHabitName.trim() || isPastMonth) return;
     const currentList = monthlyHabits[currentMonthKey] || [];
     if (editingHabitId) {
-      const updatedList = currentList.map((h) => h.id === editingHabitId ? { ...h, name: manualHabitName, icon: manualHabitIcon, restDays: manualRestDays, editCount: (h.editCount || 0) + 1 } : h);
+      const updatedList = currentList.map((h) => h.id === editingHabitId ? { ...h, name: manualHabitName, icon: manualHabitIcon, restDays: manualRestDays, isVice: manualIsVice, editCount: (h.editCount || 0) + 1 } : h);
       saveHabitsToCloud({ ...monthlyHabits, [currentMonthKey]: updatedList });
     } else {
       if (currentList.some((h) => h.name.trim().toLowerCase() === manualHabitName.trim().toLowerCase())) return alert("Habit already exists.");
-      const newHabit = { id: Date.now(), name: manualHabitName, icon: manualHabitIcon, restDays: manualRestDays, createdAt: new Date().toISOString(), editCount: 0 };
+      const newHabit = { id: Date.now(), name: manualHabitName, icon: manualHabitIcon, restDays: manualRestDays, isVice: manualIsVice, createdAt: new Date().toISOString(), editCount: 0 };
       saveHabitsToCloud({ ...monthlyHabits, [currentMonthKey]: [...currentList, newHabit] });
     }
     setShowAddModal(false);
@@ -409,23 +480,34 @@ export default function App() {
       });
 
       const totalForDay = activeH.length;
-      let count = 0;
+      let count = 0; 
+      let viceFailures = 0;
+
       activeH.forEach((h) => {
         const k = `${h.id}-${yr}-${mo}-${dy}`;
         const e = checks[k];
-        if (e) {
-          const comp = typeof e === "object" ? e.completed : !!e;
-          if (comp) {
-            count++;
-            if (typeof e === "object" ? e.xpAwarded : true) totalXP += xpVal;
-          }
+        const isChecked = e ? (typeof e === "object" ? e.completed : !!e) : false;
+        
+        if (h.isVice) {
+            if (!isChecked) {
+                count++;
+                if (d <= nowTS) totalXP += xpVal; 
+            } else {
+                viceFailures++;
+            }
+        } else {
+            if (isChecked) {
+                count++;
+                if (typeof e === "object" ? e.xpAwarded : true) totalXP += xpVal;
+            }
         }
       });
 
-      if (count > 0) active++;
+      if (count > 0 || viceFailures > 0) active++; 
+      
       let isPerfect = false;
       if (d >= startOfJoinedDate) {
-        isPerfect = totalForDay > 0 ? count === totalForDay : true;
+         isPerfect = totalForDay > 0 ? count === totalForDay : true;
       }
       data.push({ date: d, count, isPerfect });
     }
@@ -449,6 +531,9 @@ export default function App() {
 
   const stats = useMemo(() => {
     let totalChecks = 0, totalPossible = 0;
+    const now = new Date();
+    const nowStartOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
     const habitStats = currentHabits.map((h) => {
       let habitPossible = 0, count = 0;
       const createdDate = h.createdAt ? new Date(h.createdAt) : null;
@@ -456,19 +541,32 @@ export default function App() {
       for (let d = startDay; d <= endDay; d++) {
         const currentDateObj = new Date(currentYear, currentMonth, d);
         if (createdDate && currentDateObj < createdDate) continue;
+        if (currentDateObj > nowStartOfDay) continue; 
+
         habitPossible++;
         const key = `${h.id}-${currentYear}-${currentMonth}-${d}`;
         const entry = checks[key];
-        if ((typeof entry === "object" ? entry.completed : !!entry)) count++;
+        const isChecked = (typeof entry === "object" ? entry.completed : !!entry);
+        
+        if (h.isVice) {
+            if (!isChecked) count++; 
+        } else {
+            if (isChecked) count++; 
+        }
       }
       totalPossible += habitPossible;
       totalChecks += count;
       return { ...h, count, percent: habitPossible > 0 ? (count / habitPossible) * 100 : 0 };
     });
+    
     const dailyStats = Array.from({ length: totalDaysShown }).map((_, i) => {
       const day = i + startDay;
       let completedToday = 0, habitsActiveToday = 0;
       const dayDate = new Date(currentYear, currentMonth, day);
+      const isFuture = dayDate > nowStartOfDay;
+
+      if (isFuture) return { day, count: 0, percent: 0 }; 
+
       currentHabits.forEach((h) => {
         if (h.createdAt) {
           const cDate = new Date(h.createdAt); cDate.setHours(0, 0, 0, 0);
@@ -477,12 +575,128 @@ export default function App() {
         habitsActiveToday++;
         const key = `${h.id}-${currentYear}-${currentMonth}-${day}`;
         const entry = checks[key];
-        if ((typeof entry === "object" ? entry.completed : !!entry)) completedToday++;
+        const isChecked = (typeof entry === "object" ? entry.completed : !!entry);
+        
+        if (h.isVice) {
+            if (!isChecked) completedToday++;
+        } else {
+            if (isChecked) completedToday++;
+        }
       });
       return { day, count: completedToday, percent: habitsActiveToday > 0 ? (completedToday / habitsActiveToday) * 100 : 0 };
     });
     return { totalChecks, totalPossible, overallPercent: totalPossible > 0 ? (totalChecks / totalPossible) * 100 : 0, habitStats, dailyStats };
   }, [checks, currentHabits, currentYear, currentMonth, startDay, endDay]);
+
+  const timelineLogs = useMemo(() => {
+    const logs = [];
+    if (!joinedDate) return [];
+    
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const start = new Date(joinedDate);
+    start.setHours(0,0,0,0);
+    
+    for (let d = new Date(today); d >= start; d.setDate(d.getDate() - 1)) {
+        const year = d.getFullYear();
+        const month = d.getMonth();
+        const day = d.getDate();
+        const dateKey = `${year}-${month}-${day}`;
+        const logContent = logbook[dateKey];
+        
+        const mKey = `${year}-${month}`;
+        const monthHabits = monthlyHabits[mKey] || [];
+        const monthWeights = getMonthlyXpWeight(year, month, monthHabits);
+        
+        let activeHabits = 0;
+        let successCount = 0;
+        let missedCount = 0;
+        let dailyXP = 0;
+        let habitsDetails = [];
+
+        monthHabits.forEach(h => {
+             if(h.createdAt) {
+                const cDate = new Date(h.createdAt); cDate.setHours(0,0,0,0);
+                if(d < cDate) return;
+             }
+             const dayOfWeek = d.getDay();
+             const isRest = h.restDays && h.restDays.includes(dayOfWeek);
+             if(isRest) return;
+
+             activeHabits++;
+             
+             const k = `${h.id}-${year}-${month}-${day}`;
+             const entry = checks[k];
+             const isChecked = entry ? (typeof entry === "object" ? entry.completed : !!entry) : false;
+             const isXpAwarded = entry ? (typeof entry === "object" ? entry.xpAwarded : true) : false;
+             
+             let status = 'missed';
+             if (h.isVice) {
+                 if (!isChecked) {
+                   status = 'success';
+                   dailyXP += monthWeights; 
+                 } else status = 'fail';
+             } else {
+                 if (isChecked) {
+                   status = 'success';
+                   if(isXpAwarded) dailyXP += monthWeights; 
+                 }
+             }
+
+             if (status === 'success') successCount++;
+             else missedCount++;
+             
+             if (status === 'fail' || status === 'missed') {
+                habitsDetails.push({ name: h.name, icon: h.icon, status, isVice: h.isVice });
+             }
+        });
+
+        let show = true;
+        if (logFilter === 'notes' && !logContent) show = false;
+        if (logFilter === 'perfect' && (missedCount > 0 || activeHabits === 0)) show = false;
+        if (logFilter === 'missed' && missedCount === 0) show = false;
+        if (logSearch && (!logContent || !logContent.toLowerCase().includes(logSearch.toLowerCase()))) show = false;
+
+        if (show) {
+            logs.push({
+                date: new Date(d),
+                dateStr: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                logContent,
+                activeHabits,
+                successCount,
+                missedCount,
+                habitsDetails,
+                dailyXP: Math.round(dailyXP),
+                isPerfect: activeHabits > 0 && missedCount === 0
+            });
+        }
+    }
+    return logs;
+  }, [joinedDate, logbook, monthlyHabits, checks, logFilter, logSearch]);
+
+  const renderTutorial = () => {
+    if (!showTutorial) return null;
+    const safeStepIndex = (tutorialStep >= 0 && tutorialStep < TUTORIAL_STEPS.length) ? tutorialStep : 0;
+    const step = TUTORIAL_STEPS[safeStepIndex];
+    const isLastStep = safeStepIndex === TUTORIAL_STEPS.length - 1;
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm transition-all duration-500" onClick={() => { setShowTutorial(false); setHasSeenTutorial(true); if (user) setDoc(doc(db, "users", user.uid, "data", "metadata"), { tutorialSeen: true }, { merge: true }); }}>
+        <div className={`max-w-md w-full ${theme.card} border ${theme.border} p-8 rounded-lg shadow-2xl text-center animate-in fade-in zoom-in duration-300 relative`} onClick={(e) => e.stopPropagation()}>
+          <button onClick={() => { setShowTutorial(false); setHasSeenTutorial(true); if (user) setDoc(doc(db, "users", user.uid, "data", "metadata"), { tutorialSeen: true }, { merge: true }); }} className={`absolute top-4 right-4 ${theme.textMuted} hover:text-white transition-colors`}><X size={20} /></button>
+          <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-400"><Zap size={24} /></div>
+          <h3 className="text-2xl font-serif mb-2">{step.title}</h3>
+          <p className={`text-sm ${theme.textMuted} leading-relaxed mb-8`}>{step.desc}</p>
+          <div className="flex gap-4 justify-center items-center">
+            <button onClick={() => { if (safeStepIndex > 0) setTutorialStep((s) => s - 1); }} disabled={safeStepIndex === 0} className={`p-3 rounded-full border ${theme.border} transition-colors flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${safeStepIndex > 0 ? "hover:bg-zinc-800 text-white" : "text-zinc-600"}`}><ChevronLeft size={20} /></button>
+            <div className="flex gap-2">{TUTORIAL_STEPS.map((_, i) => (<div key={i} className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === safeStepIndex ? "bg-emerald-500 w-3" : "bg-zinc-700"}`} />))}</div>
+            <button onClick={() => { if (!isLastStep) setTutorialStep((s) => s + 1); }} disabled={isLastStep} className={`p-3 rounded-full border ${theme.border} transition-colors flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${!isLastStep ? "hover:bg-zinc-800 text-white" : "text-zinc-600"}`}><ChevronRightIcon size={20} /></button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const startTutorial = () => { setTutorialStep(0); setShowTutorial(true); };
 
   if (showIntro) {
     return (
@@ -514,21 +728,7 @@ export default function App() {
     return (
       <div className={`min-h-screen ${theme.bg} ${theme.text} font-sans p-4 md:p-12 flex flex-col items-center justify-center`}>
         <style>{`.custom-scrollbar::-webkit-scrollbar { height: 8px; } .custom-scrollbar::-webkit-scrollbar-track { background: ${theme.scrollTrack}; } .custom-scrollbar::-webkit-scrollbar-thumb { background-color: ${theme.scrollThumb}; border-radius: 99px; } .heatmap-grid { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; gap: 4px; }`}</style>
-        {showTutorial && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm transition-all duration-500" onClick={() => { setShowTutorial(false); setHasSeenTutorial(true); if (user) setDoc(doc(db, "users", user.uid, "data", "metadata"), { tutorialSeen: true }, { merge: true }); }}>
-            <div className={`max-w-md w-full ${theme.card} border ${theme.border} p-8 rounded-lg shadow-2xl text-center animate-in fade-in zoom-in duration-300 relative`} onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => { setShowTutorial(false); setHasSeenTutorial(true); if (user) setDoc(doc(db, "users", user.uid, "data", "metadata"), { tutorialSeen: true }, { merge: true }); }} className={`absolute top-4 right-4 ${theme.textMuted} hover:text-white transition-colors`}><X size={20} /></button>
-              <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-400"><Zap size={24} /></div>
-              <h3 className="text-2xl font-serif mb-2">{TUTORIAL_STEPS[tutorialStep].title}</h3>
-              <p className={`text-sm ${theme.textMuted} leading-relaxed mb-8`}>{TUTORIAL_STEPS[tutorialStep].desc}</p>
-              <div className="flex gap-4 justify-center items-center">
-                <button onClick={() => { if (tutorialStep > 0) setTutorialStep((s) => s - 1); }} disabled={tutorialStep === 0} className={`p-3 rounded-full border ${theme.border} transition-colors flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${tutorialStep > 0 ? "hover:bg-zinc-800 text-white" : "text-zinc-600"}`}><ChevronLeft size={20} /></button>
-                <div className="flex gap-2">{TUTORIAL_STEPS.map((_, i) => (<div key={i} className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === tutorialStep ? "bg-emerald-500 w-3" : "bg-zinc-700"}`} />))}</div>
-                <button onClick={() => { if (tutorialStep !== TUTORIAL_STEPS.length - 1) setTutorialStep((s) => s + 1); }} disabled={tutorialStep === TUTORIAL_STEPS.length - 1} className={`p-3 rounded-full border ${theme.border} transition-colors flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${tutorialStep !== TUTORIAL_STEPS.length - 1 ? "hover:bg-zinc-800 text-white" : "text-zinc-600"}`}><ChevronRightIcon size={20} /></button>
-              </div>
-            </div>
-          </div>
-        )}
+        {renderTutorial()}
         <div className="w-full max-w-6xl mb-8 flex items-center justify-between">
           <div>
             <button onClick={() => setViewMode("app")} className={`flex items-center gap-2 text-sm ${theme.textMuted} hover:text-white transition-colors mb-2`}><ArrowLeft size={16} /> Back to Dashboard</button>
@@ -554,8 +754,9 @@ export default function App() {
                 <div className="flex justify-between text-xs font-mono mb-2 text-emerald-400"><span>{Math.floor(calculatedXP)} XP</span><span>{nextLevelXP} XP</span></div>
                 <div className={`w-full h-1.5 ${theme.heatmapEmpty} rounded-full overflow-hidden`}><div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${levelProgress}%` }}></div></div>
               </div>
+              <button onClick={() => setViewMode("logbook")} className={`mt-6 w-full py-3 border ${theme.border} ${theme.hover} flex items-center justify-center gap-2 text-sm rounded transition-colors text-emerald-400 font-medium tracking-wide`}><BookOpen size={16} /> {user?.displayName ? user.displayName.split(' ')[0] + "'s" : "User's"} Log</button>
             </div>
-            <button onClick={handleLogout} className={`mt-8 w-full py-3 border ${theme.border} ${theme.hover} text-red-400 flex items-center justify-center gap-2 text-sm rounded transition-colors`}><LogOut size={16} /> Sign Out</button>
+            <button onClick={handleLogout} className={`mt-4 w-full py-3 border ${theme.border} ${theme.hover} text-red-400 flex items-center justify-center gap-2 text-sm rounded transition-colors`}><LogOut size={16} /> Sign Out</button>
           </div>
           <div className="md:col-span-2 flex flex-col gap-6">
             <div className={`flex-1 ${theme.card} border ${theme.border} rounded-lg p-8 overflow-hidden flex flex-col relative group min-h-[300px]`}>
@@ -609,24 +810,80 @@ export default function App() {
     );
   }
 
+  if (viewMode === "logbook") {
+    return (
+      <div className={`min-h-screen ${theme.bg} ${theme.text} font-sans p-4 md:p-12 flex flex-col items-center justify-center`}>
+        <style>{`.custom-scrollbar::-webkit-scrollbar { height: 8px; } .custom-scrollbar::-webkit-scrollbar-track { background: ${theme.scrollTrack}; } .custom-scrollbar::-webkit-scrollbar-thumb { background-color: ${theme.scrollThumb}; border-radius: 99px; }`}</style>
+        <div className="w-full max-w-4xl h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-8">
+                <div>
+                   <button onClick={() => setViewMode("profile")} className={`flex items-center gap-2 text-sm ${theme.textMuted} hover:text-white transition-colors mb-2`}><ArrowLeft size={16} /> Back to Profile</button>
+                   <h2 className="text-3xl font-serif">{user?.displayName ? user.displayName.split(' ')[0] + "'s" : "User's"} Log</h2>
+                </div>
+                <div className="flex items-center gap-3">
+                   <div className={`relative flex items-center ${theme.cardLight} border ${theme.border} rounded-md px-3 py-1.5`}>
+                       <Search size={14} className={theme.textMuted} />
+                       <input type="text" placeholder="Search logs..." className="bg-transparent border-none outline-none text-sm ml-2 w-32 md:w-48 placeholder:text-zinc-600" value={logSearch} onChange={(e) => setLogSearch(e.target.value)} />
+                   </div>
+                   <div className="flex gap-1">
+                      {['all', 'notes', 'perfect', 'missed'].map(f => (
+                          <button key={f} onClick={() => setLogFilter(f)} className={`text-[10px] font-mono uppercase px-3 py-1.5 rounded border transition-colors ${logFilter === f ? `border-emerald-500 ${theme.text}` : `${theme.border} ${theme.textMuted} hover:text-zinc-300`}`}>{f}</button>
+                      ))}
+                   </div>
+                </div>
+            </div>
+
+            <div className={`flex-1 overflow-y-auto custom-scrollbar ${theme.card} border ${theme.border} rounded-lg p-8 shadow-lg`}>
+                 <div className="relative border-l border-zinc-800 ml-4 md:ml-8 space-y-8">
+                    {timelineLogs.map((log, idx) => (
+                        <div key={idx} className="relative pl-8 md:pl-12 group">
+                            <div className={`absolute -left-[5px] top-6 w-2.5 h-2.5 rounded-full border-2 ${theme.bg} ${log.isPerfect ? "bg-emerald-500 border-emerald-500" : log.missedCount > 0 ? "bg-red-500 border-red-500" : "bg-zinc-600 border-zinc-600"} transition-transform group-hover:scale-125 z-10`} />
+                            <div className={`flex flex-col gap-3 ${theme.cardLight} border ${theme.border} rounded-lg p-5 hover:border-zinc-600 transition-colors`}>
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <span className="font-mono text-xs opacity-50">{log.dateStr}</span>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            {log.isPerfect ? (
+                                                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1"><Award size={12} /> PERFECT DAY</span>
+                                            ) : log.missedCount > 0 ? (
+                                                <span className="text-xs font-bold text-red-400">MISSED {log.missedCount}</span>
+                                            ) : (
+                                                <span className="text-xs font-bold text-zinc-400">{log.activeHabits} Active</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-end gap-1">
+                                        <div className="flex -space-x-2">
+                                            {log.habitsDetails.slice(0, 5).map((h, i) => (
+                                                <div key={i} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm border ${theme.border} ${theme.bg} relative`} title={h.name}>
+                                                    {h.icon}
+                                                    <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border ${theme.border} flex items-center justify-center ${h.status === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                                                </div>
+                                            ))}
+                                            {log.habitsDetails.length > 5 && <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] border ${theme.border} ${theme.bg} text-zinc-500`}>+{log.habitsDetails.length - 5}</div>}
+                                        </div>
+                                    </div>
+                                </div>
+                                {log.logContent && <p className="text-sm leading-relaxed mt-2 pl-3 border-l-2 border-zinc-700/50 italic opacity-80">"{log.logContent}"</p>}
+                                <div className={`mt-2 pt-3 border-t ${theme.border} flex justify-between items-center`}>
+                                    <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Daily Summary</span>
+                                    <span className={`text-[10px] font-mono font-bold ${log.dailyXP > 0 ? 'text-emerald-400' : 'text-zinc-500'}`}>{log.dailyXP > 0 ? `+${log.dailyXP} XP` : '0 XP'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                    {timelineLogs.length === 0 && <div className="pl-12 text-sm opacity-50 italic">No logs found for this period.</div>}
+                 </div>
+             </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen ${theme.bg} ${theme.text} font-sans p-4 md:p-12 flex flex-col items-center justify-center relative transition-colors duration-500 selection:bg-emerald-500/20 animate-in fade-in duration-700`}>
       <style>{`.custom-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; } .custom-scrollbar::-webkit-scrollbar-track { background: ${theme.scrollTrack}; } .custom-scrollbar::-webkit-scrollbar-thumb { background-color: ${theme.scrollThumb}; border-radius: 9999px; border: 3px solid transparent; background-clip: content-box; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: ${darkMode ? "#52525b" : "#a1a1aa"}; } @keyframes floatUp { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-20px) scale(1.1); } }`}</style>
-      {showTutorial && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm transition-all duration-500" onClick={() => { setShowTutorial(false); setHasSeenTutorial(true); if (user) setDoc(doc(db, "users", user.uid, "data", "metadata"), { tutorialSeen: true }, { merge: true }); }}>
-          <div className={`max-w-md w-full ${theme.card} border ${theme.border} p-8 rounded-lg shadow-2xl text-center animate-in fade-in zoom-in duration-300 relative`} onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => { setShowTutorial(false); setHasSeenTutorial(true); if (user) setDoc(doc(db, "users", user.uid, "data", "metadata"), { tutorialSeen: true }, { merge: true }); }} className={`absolute top-4 right-4 ${theme.textMuted} hover:text-white transition-colors`}><X size={20} /></button>
-            <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-400"><Zap size={24} /></div>
-            <h3 className="text-2xl font-serif mb-2">{TUTORIAL_STEPS[tutorialStep].title}</h3>
-            <p className={`text-sm ${theme.textMuted} leading-relaxed mb-8`}>{TUTORIAL_STEPS[tutorialStep].desc}</p>
-            <div className="flex gap-4 justify-center items-center">
-              <button onClick={() => { if (tutorialStep > 0) setTutorialStep((s) => s - 1); }} disabled={tutorialStep === 0} className={`p-3 rounded-full border ${theme.border} transition-colors flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${tutorialStep > 0 ? "hover:bg-zinc-800 text-white" : "text-zinc-600"}`}><ChevronLeft size={20} /></button>
-              <div className="flex gap-2">{TUTORIAL_STEPS.map((_, i) => (<div key={i} className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === tutorialStep ? "bg-emerald-500 w-3" : "bg-zinc-700"}`} />))}</div>
-              <button onClick={() => { if (tutorialStep !== TUTORIAL_STEPS.length - 1) setTutorialStep((s) => s + 1); }} disabled={tutorialStep === TUTORIAL_STEPS.length - 1} className={`p-3 rounded-full border ${theme.border} transition-colors flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${tutorialStep !== TUTORIAL_STEPS.length - 1 ? "hover:bg-zinc-800 text-white" : "text-zinc-600"}`}><ChevronRightIcon size={20} /></button>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderTutorial()}
       {xpPopups.map((p) => (<div key={p.id} className={`fixed pointer-events-none font-mono font-bold text-sm z-[60] ${p.isZero ? "text-zinc-500" : "text-emerald-400"}`} style={{ left: p.x + 10, top: p.y - 20, animation: "floatUp 0.8s ease-out forwards" }}>{p.amount >= 0 ? "+" : ""}{p.amount} XP</div>))}
       <div className="w-full max-w-7xl mb-8 flex flex-col-reverse md:flex-row justify-between items-center gap-6 mt-12 md:mt-0">
         <div className="w-full md:w-auto">
@@ -654,13 +911,22 @@ export default function App() {
       </div>
       <div className={`w-full max-w-7xl mb-6 flex gap-6 border-b ${theme.tabBorder}`}>
         <button onClick={() => setActiveTab("tracker")} className={`pb-2 text-sm font-mono tracking-wider uppercase transition-colors border-b-2 ${activeTab === "tracker" ? `border-emerald-500 ${theme.text}` : `border-transparent ${theme.textMuted} hover:text-zinc-300`}`}>// Journal</button>
-        {currentHabits.length > 0 && (<button onClick={() => setActiveTab("analysis")} className={`pb-2 text-sm font-mono tracking-wider uppercase transition-colors border-b-2 ${activeTab === "analysis" ? `border-emerald-500 ${theme.text}` : `border-transparent ${theme.textMuted} hover:text-zinc-300`}`}>// Analytics</button>)}
+        {currentHabits.length > 0 && !isFutureMonth && (<button onClick={() => setActiveTab("analysis")} className={`pb-2 text-sm font-mono tracking-wider uppercase transition-colors border-b-2 ${activeTab === "analysis" ? `border-emerald-500 ${theme.text}` : `border-transparent ${theme.textMuted} hover:text-zinc-300`}`}>// Analytics</button>)}
       </div>
       {activeTab === "tracker" && (
         <div className={`w-full max-w-7xl border-y ${theme.border} md:border ${theme.card} md:rounded-lg overflow-hidden flex flex-col h-fit shadow-sm animate-in fade-in duration-500`}>
           <div className="flex-1 flex flex-col min-w-0">
             <div className={`p-4 border-b ${theme.border} flex justify-between items-center ${theme.bg}`}>
-              <span className={`font-serif text-xl font-light ${theme.text}`}>Daily Entries</span>
+              <div className="flex flex-col sm:flex-row sm:items-baseline gap-4">
+                <span className={`font-serif text-xl font-light ${theme.text}`}>Daily Entries</span>
+                {(currentHabits.length > 0 && !isTooFarFuture) && (
+                  <div className={`flex flex-wrap items-center gap-3 text-[10px] font-mono uppercase tracking-wider ${theme.textMuted}`}>
+                    <div className="flex items-center gap-1.5"><div className={`w-4 h-4 flex items-center justify-center rounded-[2px] ${theme.checkBg} border border-emerald-900/30`}><Check size={10} strokeWidth={4} className={theme.checkFill}/></div><span>XP</span></div>
+                    <div className="flex items-center gap-1.5"><div className={`w-4 h-4 flex items-center justify-center rounded-[2px] ${theme.checkBgZero}`}><Check size={10} strokeWidth={4} className={theme.checkFillZero}/></div><span>No XP</span></div>
+                    <div className="flex items-center gap-1.5"><div className={`w-4 h-4 flex items-center justify-center rounded-[2px] ${theme.viceFail}`}><X size={10} strokeWidth={4} className="text-white"/></div><span>Vice Fail</span></div>
+                  </div>
+                )}
+              </div>
               {!isPastMonth && !isTooFarFuture && (<button onClick={() => openAddHabit()} className={`flex items-center gap-2 px-3 py-1.5 text-xs font-mono border ${theme.border} rounded hover:border-emerald-500 transition-colors`}><Plus size={12} /> ADD ENTRY</button>)}
             </div>
             <div className="overflow-x-auto custom-scrollbar bg-transparent">
@@ -683,7 +949,9 @@ export default function App() {
                         <th className={`sticky left-0 z-20 ${theme.gridHeader} p-4 text-left min-w-[200px] border-r ${theme.border}`}><span className="font-serif text-lg opacity-50">Habits</span></th>
                         {Array.from({ length: totalDaysShown }).map((_, i) => {
                           const dayNum = i + startDay; const isToday = dayNum === new Date().getDate() && currentMonth === new Date().getMonth() && currentYear === new Date().getFullYear();
-                          return (<th key={i} className={`p-3 text-center min-w-[48px] border-r ${theme.gridBorder} ${isToday ? "bg-emerald-500/5" : ""}`}><div className={`text-[10px] font-mono uppercase tracking-widest ${theme.textMuted} mb-1`}>{WEEK_DAYS[new Date(currentYear, currentMonth, dayNum).getDay()]}</div><div className={`text-sm font-mono ${isToday ? theme.accent : ""}`}>{dayNum < 10 ? `0${dayNum}` : dayNum}</div></th>);
+                          const dateKey = `${currentYear}-${currentMonth}-${dayNum}`;
+                          const hasNote = logbook[dateKey];
+                          return (<th key={i} onClick={() => openLogbook(dayNum)} className={`p-3 text-center min-w-[48px] border-r ${theme.gridBorder} ${isToday ? "bg-emerald-500/5" : ""} cursor-pointer hover:bg-white/5 transition-colors group relative`}><div className={`text-[10px] font-mono uppercase tracking-widest ${theme.textMuted} mb-1`}>{WEEK_DAYS[new Date(currentYear, currentMonth, dayNum).getDay()]}</div><div className={`text-sm font-mono flex items-center justify-center gap-1 ${isToday ? theme.accent : ""}`}>{dayNum < 10 ? `0${dayNum}` : dayNum}{hasNote && <span className="w-1 h-1 rounded-full bg-blue-400"></span>}</div></th>);
                         })}
                       </tr>
                     </thead>
@@ -694,7 +962,7 @@ export default function App() {
                           <tr key={habit.id} draggable={isDraggable} onDragStart={(e) => handleDragStart(e, index)} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, index)} onDragEnd={() => setDraggedHabitIndex(null)} className={`group ${theme.hover} transition-colors ${draggedHabitIndex === index ? 'opacity-50' : ''}`}>
                             <td className={`sticky left-0 z-10 ${theme.gridHeader} group-hover:${theme.hover} p-4 border-r ${theme.border} border-b ${theme.border} transition-colors`}>
                               <div className="flex justify-between items-center group/cell">
-                                <div className="flex items-center gap-3">{isDraggable && (<span className="cursor-grab active:cursor-grabbing text-zinc-500/30 hover:text-zinc-500 transition-colors"><GripVertical size={14} /></span>)}<span className="text-xl">{habit.icon}</span><span className="font-medium text-sm tracking-wide">{habit.name}</span>{habit.restDays && habit.restDays.length > 0 && (<span className="text-[10px] text-zinc-500 ml-2 border border-zinc-700 px-1 rounded">REST: {habit.restDays.length}</span>)}</div>
+                                <div className="flex items-center gap-3">{isDraggable && (<span className="cursor-grab active:cursor-grabbing text-zinc-500/30 hover:text-zinc-500 transition-colors"><GripVertical size={14} /></span>)}<span className="text-xl">{habit.icon}</span><span className="font-medium text-sm tracking-wide flex items-center gap-2">{habit.name}{habit.isVice && <Skull size={12} className="text-red-400 flex-shrink-0"/>}</span>{habit.restDays && habit.restDays.length > 0 && (<span className="text-[10px] text-zinc-500 ml-2 border border-zinc-700 px-1 rounded">REST: {habit.restDays.length}</span>)}</div>
                                 {!isPastMonth && !isTooFarFuture && (<div className="flex gap-1 opacity-0 group-hover/cell:opacity-100 transition-opacity"><button onClick={() => openEditHabit(habit)} className="p-1 hover:text-emerald-400"><Edit2 size={12} /></button><button onClick={(e) => deleteHabit(habit.id, e)} className="p-1 hover:text-red-500"><X size={14} /></button></div>)}
                               </div>
                             </td>
@@ -709,9 +977,37 @@ export default function App() {
                               const isRestDay = habit.restDays && habit.restDays.includes(dayOfWeek);
                               let isVoid = false;
                               if (habit.createdAt) { const createdDate = new Date(habit.createdAt); createdDate.setHours(0, 0, 0, 0); const currentGridDate = new Date(currentYear, currentMonth, dayNum); if (currentGridDate < createdDate) isVoid = true; }
+                              
+                              const currentGridDate = new Date(currentYear, currentMonth, dayNum);
+                              const nowStartOfDay = new Date(); nowStartOfDay.setHours(0,0,0,0);
+                              const isFutureDate = currentGridDate > nowStartOfDay;
+
                               if (isVoid) return (<td key={dIdx} className={`p-0 text-center border-r ${theme.gridBorder} border-b ${theme.border}`} style={{ background: theme.voidPattern }}></td>);
                               if (isRestDay) return (<td key={dIdx} className={`p-0 text-center border-r ${theme.gridBorder} border-b ${theme.border} bg-zinc-900/30`}><div className="w-full h-14 flex items-center justify-center opacity-20"><Ban size={12} /></div></td>);
-                              return (<td key={dIdx} className={`p-0 text-center border-r ${theme.gridBorder} border-b ${theme.border} relative ${isLocked ? "cursor-not-allowed opacity-50" : "cursor-pointer"} ${isToday ? "bg-emerald-500/5" : ""}`} onClick={(e) => !isLocked && toggleCheck(habit.id, dayNum, e)}><div className="w-full h-14 flex items-center justify-center">{isChecked ? (<div className={`w-5 h-5 rounded-sm ${theme.checkFill} flex items-center justify-center shadow-sm`}><Check className="w-3.5 h-3.5 text-white" strokeWidth={3} /></div>) : (<div className={`w-1.5 h-1.5 rounded-full ${theme.gridBorder} bg-current opacity-10 group-hover:opacity-20`} />)}</div></td>);
+                              
+                              const isZeroXP = isChecked && typeof entry === "object" && !entry.xpAwarded;
+                              let checkColor = isZeroXP ? theme.checkFillZero : theme.checkFill;
+                              let checkBgColor = isZeroXP ? theme.checkBgZero : theme.checkBg;
+                              if(habit.isVice && isChecked) checkColor = theme.viceFail;
+
+                              let cellContent = null;
+                              if (habit.isVice) {
+                                  if (isFutureDate) {
+                                      cellContent = <div className={`w-1.5 h-1.5 rounded-full ${theme.gridBorder} bg-current opacity-10 group-hover:opacity-20`} />;
+                                  } else if (isChecked) {
+                                      cellContent = <div className={`w-5 h-5 rounded-sm ${checkColor} flex items-center justify-center shadow-sm`}><X className="w-3.5 h-3.5 text-white" strokeWidth={3} /></div>;
+                                  } else {
+                                      cellContent = <div className={`w-5 h-5 flex items-center justify-center`}><Check className={`w-4 h-4 ${theme.viceSuccess}`} /></div>;
+                                  }
+                              } else {
+                                  if (isChecked) {
+                                      cellContent = <div className={`w-5 h-5 rounded-sm ${checkBgColor} flex items-center justify-center shadow-sm border ${isZeroXP ? 'border-zinc-700' : 'border-emerald-900/50'}`}><Check className={`w-3.5 h-3.5 ${checkColor}`} strokeWidth={3} /></div>;
+                                  } else {
+                                      cellContent = <div className={`w-1.5 h-1.5 rounded-full ${theme.gridBorder} bg-current opacity-10 group-hover:opacity-20`} />;
+                                  }
+                              }
+
+                              return (<td key={dIdx} className={`p-0 text-center border-r ${theme.gridBorder} border-b ${theme.border} relative ${isLocked ? "cursor-not-allowed opacity-50" : "cursor-pointer"} ${isToday ? "bg-emerald-500/5" : ""}`} onClick={(e) => !isLocked && toggleCheck(habit, dayNum, e)}><div className="w-full h-14 flex items-center justify-center">{cellContent}</div></td>);
                             })}
                           </tr>
                         );
@@ -726,6 +1022,13 @@ export default function App() {
       )}
       {activeTab === "analysis" && (
         <div className={`w-full max-w-7xl border-y ${theme.border} md:border ${theme.card} md:rounded-lg overflow-hidden p-8 shadow-sm animate-in fade-in duration-500 min-h-[600px]`}>
+          {currentHabits.length === 0 ? (
+             <div className="flex flex-col items-center justify-center h-full text-center p-12">
+               <PieChart className={`w-16 h-16 mb-4 ${theme.textMuted}`} />
+               <h3 className="text-2xl font-serif mb-2">No Data Yet</h3>
+               <p className={`${theme.textMuted} max-w-sm`}>Add some habits in the Journal to see your analytics.</p>
+             </div>
+          ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className={`lg:col-span-1 p-8 rounded-lg border ${theme.border} ${theme.cardLight} flex flex-col items-center justify-center relative overflow-hidden h-80`}>
               <div className="relative z-10 flex flex-col items-center"><p className={`text-xs font-mono uppercase tracking-widest ${theme.textMuted} mb-6`}>Month Score</p><div className="relative w-48 h-48"><svg className="w-full h-full transform -rotate-90"><circle cx="96" cy="96" r="60" stroke="currentColor" strokeWidth="12" fill="transparent" className="opacity-10" /><circle cx="96" cy="96" r="60" stroke={darkMode ? "#34d399" : "#059669"} strokeWidth="12" fill="transparent" strokeDasharray={2 * Math.PI * 60} strokeDashoffset={2 * Math.PI * 60 - (stats.overallPercent / 100) * (2 * Math.PI * 60)} strokeLinecap="butt" className="transition-all duration-1000 ease-out" /></svg><div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-5xl font-serif font-light">{stats.overallPercent.toFixed(0)}%</span></div></div></div>
@@ -742,6 +1045,7 @@ export default function App() {
               </div>
             </div>
           </div>
+          )}
         </div>
       )}
       {showAddModal && (
@@ -758,13 +1062,29 @@ export default function App() {
                 <div className="flex flex-wrap gap-2 mb-3">{PRESET_ICONS.map((icon) => (<button key={icon} onClick={() => setManualHabitIcon(icon)} className={`w-9 h-9 flex items-center justify-center rounded text-lg border transition-all ${manualHabitIcon === icon ? `border-emerald-500 ${theme.accentBg} text-white` : `${theme.border} hover:border-zinc-500 opacity-60 hover:opacity-100`}`}>{icon}</button>))}</div>
                 <div className="flex items-center gap-2"><span className={`text-xs ${theme.textMuted}`}>Custom:</span><input type="text" value={manualHabitIcon} onChange={(e) => setManualHabitIcon(e.target.value)} className={`w-12 text-center bg-transparent border-b ${theme.border} py-1 text-lg focus:outline-none focus:border-emerald-500 transition-colors`} maxLength={2} /></div>
               </div>
-              <div>
-                <label className={`block text-xs font-mono uppercase tracking-widest mb-3 ${theme.textMuted}`}>Rest Days (Optional)</label>
-                <div className="flex gap-2">{WEEK_DAYS.map((day, index) => { const isRest = manualRestDays.includes(index); return (<button key={day} onClick={() => { if (isRest) setManualRestDays((prev) => prev.filter((d) => d !== index)); else { if (manualRestDays.length >= 3) return alert("Maximum 3 rest days allowed."); setManualRestDays((prev) => [...prev, index]); } }} className={`w-9 h-9 text-xs font-bold rounded transition-all ${isRest ? "bg-zinc-700 text-zinc-400 line-through" : `border ${theme.border} hover:border-emerald-500`}`}>{day}</button>); })}</div>
+              <div className="flex items-center justify-between border border-zinc-700 p-3 rounded">
+                  <div><span className="block text-sm font-medium">Vice Mode</span><span className={`text-xs ${theme.textMuted}`}>Bad habit to break (e.g. Smoking)</span></div>
+                  <button onClick={() => setManualIsVice(!manualIsVice)} className={`w-10 h-6 rounded-full transition-colors relative ${manualIsVice ? "bg-rose-500" : "bg-zinc-600"}`}><div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${manualIsVice ? "translate-x-4" : ""}`} /></button>
               </div>
+              {!manualIsVice && (<div>
+                <label className={`block text-xs font-mono uppercase tracking-widest mb-3 ${theme.textMuted}`}>Frequency (Days Active)</label>
+                <div className="flex gap-2">{WEEK_DAYS.map((day, index) => { const isRest = manualRestDays.includes(index); return (<button key={day} onClick={() => { if (isRest) setManualRestDays((prev) => prev.filter((d) => d !== index)); else { setManualRestDays((prev) => [...prev, index]); } }} className={`w-9 h-9 text-xs font-bold rounded transition-all ${!isRest ? `bg-emerald-600 text-white` : `bg-zinc-800 text-zinc-500 line-through border ${theme.border}`}`}>{day}</button>); })}</div>
+              </div>)}
               <button onClick={saveHabit} disabled={!manualHabitName.trim()} className={`w-full py-4 mt-4 bg-emerald-600 hover:bg-emerald-700 text-white font-medium tracking-wide rounded-sm disabled:opacity-50 transition-all`}>{editingHabitId ? "Save Changes" : "Confirm Addition"}</button>
             </div>
           </div>
+        </div>
+      )}
+      {showLogModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className={`${theme.card} border ${theme.border} w-full max-w-md p-8 rounded-lg shadow-2xl`}>
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-serif flex items-center gap-2"><BookOpen size={20} /> Daily Log: <span className="font-mono text-base opacity-70">{new Date(selectedLogDate.split('-')[0], selectedLogDate.split('-')[1], selectedLogDate.split('-')[2]).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span></h3>
+                    <button onClick={() => setShowLogModal(false)} className={theme.textMuted}><X size={20} /></button>
+                </div>
+                <textarea className={`w-full h-32 bg-transparent border ${theme.border} rounded p-3 text-sm focus:outline-none focus:border-emerald-500 transition-colors resize-none mb-4`} placeholder="Log" value={logEntryText} onChange={handleLogChange} />
+                <button onClick={saveLogEntry} className={`w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-sm transition-all`}>Save Entry</button>
+            </div>
         </div>
       )}
     </div>
