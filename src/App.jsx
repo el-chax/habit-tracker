@@ -4,7 +4,7 @@ import {
   PieChart, Activity, TrendingUp, Award, Zap, LogOut, User, Loader2, AlertTriangle,
   Menu, ArrowLeft, Flame, Image as ImageIcon, Upload, HelpCircle,
   ChevronRight as ChevronRightIcon, Edit2, Ban, Trash2, GripVertical, BookOpen, Skull,
-  Search, Filter, Circle, CheckCircle, XCircle
+  Search, Filter, Circle, CheckCircle, XCircle, Trophy
 } from "lucide-react";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
@@ -63,15 +63,10 @@ export default function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const [hasSeenTutorial, setHasSeenTutorial] = useState(() => JSON.parse(localStorage.getItem("ht_tutorial_seen") || "false"));
-  
   const [showAddModal, setShowAddModal] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
   const [selectedLogDate, setSelectedLogDate] = useState(null);
   const [logEntryText, setLogEntryText] = useState("");
-  
-  const [logSearch, setLogSearch] = useState("");
-  const [logFilter, setLogFilter] = useState("all"); 
-
   const [editingHabitId, setEditingHabitId] = useState(null);
   const [manualHabitName, setManualHabitName] = useState("");
   const [manualHabitIcon, setManualHabitIcon] = useState("✨");
@@ -80,6 +75,11 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(() => JSON.parse(localStorage.getItem("ht_dark") || "true"));
   const [strictMode, setStrictMode] = useState(() => JSON.parse(localStorage.getItem("ht_strict") || "true"));
   const [activeTab, setActiveTab] = useState("tracker");
+  const [logSearch, setLogSearch] = useState("");
+  const [logFilter, setLogFilter] = useState("all");
+  
+  const [notifications, setNotifications] = useState([]);
+  const prevLevelRef = useRef(0);
 
   const profileRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -479,6 +479,15 @@ export default function App() {
         return !isRest && isCreated;
       });
 
+      const existingHabitsCount = hForMonth.filter(h => {
+        let isCreated = true;
+        if (h.createdAt) {
+          const cDate = new Date(h.createdAt); cDate.setHours(0,0,0,0);
+          if (d < cDate) isCreated = false;
+        }
+        return isCreated;
+      }).length;
+
       const totalForDay = activeH.length;
       let count = 0; 
       let viceFailures = 0;
@@ -507,7 +516,12 @@ export default function App() {
       
       let isPerfect = false;
       if (d >= startOfJoinedDate) {
-         isPerfect = totalForDay > 0 ? count === totalForDay : true;
+         if (totalForDay > 0) {
+             isPerfect = count === totalForDay;
+         } else {
+             if (existingHabitsCount > 0) isPerfect = true;
+             else isPerfect = false;
+         }
       }
       data.push({ date: d, count, isPerfect });
     }
@@ -524,6 +538,16 @@ export default function App() {
   }, [checks, monthlyHabits, joinedDate]);
 
   const currentLevel = Math.min(100, Math.floor(100 * Math.pow(calculatedXP / 36500, 0.6)));
+  
+  useEffect(() => {
+    if (prevLevelRef.current > 0 && currentLevel > prevLevelRef.current) {
+        const id = Date.now();
+        setNotifications(prev => [...prev, { id, message: `Level Up! You reached Level ${currentLevel}` }]);
+        setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000);
+    }
+    prevLevelRef.current = currentLevel;
+  }, [currentLevel]);
+
   const nextLevelXP = Math.ceil(36500 * Math.pow((currentLevel + 1) / 100, 1 / 0.6));
   const currentLevelBaseXP = Math.ceil(36500 * Math.pow(currentLevel / 100, 1 / 0.6));
   const levelProgress = currentLevel === 100 ? 100 : Math.max(0, Math.min(100, ((calculatedXP - currentLevelBaseXP) / (nextLevelXP - currentLevelBaseXP)) * 100));
@@ -542,6 +566,9 @@ export default function App() {
         const currentDateObj = new Date(currentYear, currentMonth, d);
         if (createdDate && currentDateObj < createdDate) continue;
         if (currentDateObj > nowStartOfDay) continue; 
+
+        const dayOfWeek = currentDateObj.getDay();
+        if (h.restDays && h.restDays.includes(dayOfWeek)) continue;
 
         habitPossible++;
         const key = `${h.id}-${currentYear}-${currentMonth}-${d}`;
@@ -572,6 +599,11 @@ export default function App() {
           const cDate = new Date(h.createdAt); cDate.setHours(0, 0, 0, 0);
           if (dayDate < cDate) return;
         }
+
+        const dayOfWeek = dayDate.getDay();
+        const isRest = h.restDays && h.restDays.includes(dayOfWeek);
+        if (isRest) return; 
+
         habitsActiveToday++;
         const key = `${h.id}-${currentYear}-${currentMonth}-${day}`;
         const entry = checks[key];
@@ -597,7 +629,10 @@ export default function App() {
     const start = new Date(joinedDate);
     start.setHours(0,0,0,0);
     
-    for (let d = new Date(today); d >= start; d.setDate(d.getDate() - 1)) {
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    for (let d = new Date(yesterday); d >= start; d.setDate(d.getDate() - 1)) {
         const year = d.getFullYear();
         const month = d.getMonth();
         const day = d.getDate();
@@ -754,8 +789,8 @@ export default function App() {
                 <div className="flex justify-between text-xs font-mono mb-2 text-emerald-400"><span>{Math.floor(calculatedXP)} XP</span><span>{nextLevelXP} XP</span></div>
                 <div className={`w-full h-1.5 ${theme.heatmapEmpty} rounded-full overflow-hidden`}><div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${levelProgress}%` }}></div></div>
               </div>
-              <button onClick={() => setViewMode("logbook")} className={`mt-6 w-full py-3 border ${theme.border} ${theme.hover} flex items-center justify-center gap-2 text-sm rounded transition-colors text-emerald-400 font-medium tracking-wide`}><BookOpen size={16} /> {user?.displayName ? user.displayName.split(' ')[0] + "'s" : "User's"} Log</button>
             </div>
+            <button onClick={() => setViewMode("logbook")} className={`mt-6 w-full py-3 border ${theme.border} ${theme.hover} flex items-center justify-center gap-2 text-sm rounded transition-colors text-emerald-400 font-medium tracking-wide`}><BookOpen size={16} /> {user?.displayName ? user.displayName.split(' ')[0] + "'s" : "User's"} Log</button>
             <button onClick={handleLogout} className={`mt-4 w-full py-3 border ${theme.border} ${theme.hover} text-red-400 flex items-center justify-center gap-2 text-sm rounded transition-colors`}><LogOut size={16} /> Sign Out</button>
           </div>
           <div className="md:col-span-2 flex flex-col gap-6">
@@ -885,6 +920,12 @@ export default function App() {
       <style>{`.custom-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; } .custom-scrollbar::-webkit-scrollbar-track { background: ${theme.scrollTrack}; } .custom-scrollbar::-webkit-scrollbar-thumb { background-color: ${theme.scrollThumb}; border-radius: 9999px; border: 3px solid transparent; background-clip: content-box; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: ${darkMode ? "#52525b" : "#a1a1aa"}; } @keyframes floatUp { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-20px) scale(1.1); } }`}</style>
       {renderTutorial()}
       {xpPopups.map((p) => (<div key={p.id} className={`fixed pointer-events-none font-mono font-bold text-sm z-[60] ${p.isZero ? "text-zinc-500" : "text-emerald-400"}`} style={{ left: p.x + 10, top: p.y - 20, animation: "floatUp 0.8s ease-out forwards" }}>{p.amount >= 0 ? "+" : ""}{p.amount} XP</div>))}
+      {notifications.map((n) => (
+        <div key={n.id} className={`fixed top-4 right-4 z-[70] ${theme.cardLight} border border-emerald-500 text-emerald-400 px-4 py-3 rounded-md shadow-lg flex items-center gap-3 animate-in slide-in-from-right duration-300`}>
+          <Trophy size={18} />
+          <span className="text-sm font-bold font-mono">{n.message}</span>
+        </div>
+      ))}
       <div className="w-full max-w-7xl mb-8 flex flex-col-reverse md:flex-row justify-between items-center gap-6 mt-12 md:mt-0">
         <div className="w-full md:w-auto">
           <div className="flex items-center gap-6 mb-2">
@@ -975,6 +1016,7 @@ export default function App() {
                               const isLocked = (strictMode && !isToday && !allowLateEdit) || (isPastMonth && !allowLateEdit);
                               const dayOfWeek = new Date(currentYear, currentMonth, dayNum).getDay();
                               const isRestDay = habit.restDays && habit.restDays.includes(dayOfWeek);
+                              
                               let isVoid = false;
                               if (habit.createdAt) { const createdDate = new Date(habit.createdAt); createdDate.setHours(0, 0, 0, 0); const currentGridDate = new Date(currentYear, currentMonth, dayNum); if (currentGridDate < createdDate) isVoid = true; }
                               
